@@ -4,7 +4,6 @@ import cv2
 import numpy as np
 from PIL import Image
 import re
-import pandas as pd
 from datetime import datetime
 import os
 import subprocess
@@ -87,6 +86,12 @@ st.markdown("""
         text-align: center;
     }
     
+    .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #667eea;
+    }
+    
     .bid-box {
         background: #dcfce7;
         padding: 0.5rem;
@@ -99,6 +104,20 @@ st.markdown("""
         padding: 0.5rem;
         border-radius: 5px;
         text-align: center;
+    }
+    
+    .stButton button {
+        width: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-weight: bold;
+        border: none;
+        padding: 0.5rem;
+        border-radius: 10px;
+    }
+    
+    .stButton button:hover {
+        opacity: 0.9;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -114,28 +133,42 @@ if 'analyzed' not in st.session_state:
     st.session_state.analyzed = False
 if 'uploaded_image' not in st.session_state:
     st.session_state.uploaded_image = None
+if 'debug_info' not in st.session_state:
+    st.session_state.debug_info = ""
 
 # Header
 st.markdown('<p class="main-header">🐂 นายพรานจับจังหวะ</p>', unsafe_allow_html=True)
 st.markdown("---")
 
 # แสดงสถานะ Tesseract
-if not HAS_TESSERACT:
-    st.sidebar.warning("⚠️ Tesseract ไม่พร้อมใช้งาน กรุณาป้อนตัวเลขเอง")
-
-# Layout
-left_col, right_col = st.columns([1, 1])
-
-with left_col:
-    st.markdown("### 📸 1. อัปโหลดภาพ")
-    uploaded_file = st.file_uploader("เลือกภาพ (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
+with st.sidebar:
+    st.markdown("### 🔧 ระบบ")
+    if HAS_TESSERACT:
+        st.success("✅ Tesseract พร้อมใช้งาน")
+    else:
+        st.warning("⚠️ Tesseract ไม่พร้อมใช้งาน (กรุณาป้อนตัวเลขเอง)")
     
-    if uploaded_file:
+    if st.button("🧹 ล้างค่าทั้งหมด"):
+        st.session_state.ocr_done = False
+        st.session_state.bid_values = [0, 0, 0, 0, 0]
+        st.session_state.offer_values = [0, 0, 0, 0, 0]
+        st.session_state.analyzed = False
+        st.session_state.uploaded_image = None
+        st.rerun()
+
+# Layout 2 คอลัมน์
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.markdown("### 📸 1. อัปโหลดภาพ")
+    uploaded_file = st.file_uploader("เลือกภาพ (PNG/JPG)", type=['png', 'jpg', 'jpeg'], key="uploader")
+    
+    if uploaded_file is not None:
         image = Image.open(uploaded_file)
         st.session_state.uploaded_image = image
         st.image(image, caption="ภาพที่อัปโหลด", use_column_width=True)
         
-        if HAS_TESSERACT and st.button("🔍 อ่านค่าด้วย OCR", use_container_width=True):
+        if HAS_TESSERACT and st.button("🔍 อ่านค่าด้วย OCR", key="ocr_btn"):
             with st.spinner("กำลังอ่านภาพ..."):
                 try:
                     # แปลงภาพ
@@ -149,6 +182,7 @@ with left_col:
                     
                     # ดึงตัวเลข
                     numbers = re.findall(r'\d+', text)
+                    st.session_state.debug_info = f"OCR found: {numbers}"
                     
                     if len(numbers) >= 10:
                         st.session_state.bid_values = [int(x) for x in numbers[:5]]
@@ -157,12 +191,15 @@ with left_col:
                         st.success(f"✅ อ่านพบ {len(numbers)} ตัวเลข")
                         st.rerun()
                     else:
-                        st.warning(f"⚠️ พบ {len(numbers)} ตัวเลข (ต้องการ 10)")
-                        st.text(text)
+                        st.warning(f"⚠️ พบ {len(numbers)} ตัวเลข (ต้องการอย่างน้อย 10)")
+                        with st.expander("ดูข้อความที่อ่านได้"):
+                            st.text(text)
                 except Exception as e:
-                    st.error(f"❌ OCR error: {e}")
+                    st.error(f"❌ เกิดข้อผิดพลาด: {e}")
+    else:
+        st.info("👆 กรุณาเลือกภาพก่อน")
 
-with right_col:
+with col2:
     st.markdown("### ✏️ 2. ตรวจสอบและแก้ไข")
     
     # Bid
@@ -170,13 +207,13 @@ with right_col:
     bid_cols = st.columns(5)
     for i in range(5):
         with bid_cols[i]:
-            st.markdown(f"<div class='bid-box'>B{i+1}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center; font-weight:bold;'>B{i+1}</div>", unsafe_allow_html=True)
             st.session_state.bid_values[i] = st.number_input(
-                f"bid_{i+1}",
+                f"bid_{i}",
                 min_value=0,
                 value=st.session_state.bid_values[i],
                 step=1000,
-                key=f"bid_{i}",
+                key=f"bid_input_{i}",
                 label_visibility="collapsed"
             )
     
@@ -185,18 +222,19 @@ with right_col:
     offer_cols = st.columns(5)
     for i in range(5):
         with offer_cols[i]:
-            st.markdown(f"<div class='offer-box'>O{i+1}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center; font-weight:bold;'>O{i+1}</div>", unsafe_allow_html=True)
             st.session_state.offer_values[i] = st.number_input(
-                f"offer_{i+1}",
+                f"offer_{i}",
                 min_value=0,
                 value=st.session_state.offer_values[i],
                 step=1000,
-                key=f"offer_{i}",
+                key=f"offer_input_{i}",
                 label_visibility="collapsed"
             )
     
     # ปุ่มวิเคราะห์
-    if st.button("📊 วิเคราะห์", type="primary", use_container_width=True):
+    st.markdown("---")
+    if st.button("📊 วิเคราะห์", key="analyze_btn"):
         st.session_state.analyzed = True
         st.rerun()
 
@@ -205,79 +243,98 @@ if st.session_state.analyzed:
     st.markdown("---")
     st.markdown("## 🎯 ผลวิเคราะห์")
     
+    # คำนวณค่า
     bid_3 = sum(st.session_state.bid_values[:3])
     offer_3 = sum(st.session_state.offer_values[:3])
     ratio = bid_3 / offer_3 if offer_3 > 0 else 0
     
+    # สถิติ
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown(f"""
         <div class="stat-box">
             <div class="stat-number">{bid_3:,}</div>
-            <div>Bid 3 ช่อง</div>
+            <div style="color:#666;">Bid 3 ช่อง</div>
         </div>
         """, unsafe_allow_html=True)
     with col2:
         st.markdown(f"""
         <div class="stat-box">
             <div class="stat-number">{offer_3:,}</div>
-            <div>Offer 3 ช่อง</div>
+            <div style="color:#666;">Offer 3 ช่อง</div>
         </div>
         """, unsafe_allow_html=True)
     with col3:
         st.markdown(f"""
         <div class="stat-box">
             <div class="stat-number">{ratio:.2f}</div>
-            <div>อัตราส่วน</div>
+            <div style="color:#666;">อัตราส่วน</div>
         </div>
         """, unsafe_allow_html=True)
     
     st.markdown("---")
     
-    # กลยุทธ์
+    # แสดงกลยุทธ์
     if ratio >= 2:
         st.markdown(f"""
         <div class="guru-card whale-card">
-            <h2>🐋 WHALE RIDER</h2>
-            <p>วอลุ่มซื้อหนา {ratio:.2f} เท่า เจ้ากำลังช้อนของ</p>
+            <h2 style="margin:0;">🐋 WHALE RIDER</h2>
+            <p style="font-size:1.2rem;">วอลุ่มซื้อหนา {ratio:.2f} เท่า</p>
+            <p style="font-size:1.1rem;">เจ้ากำลังช้อนของ!</p>
             <div class="guru-quote">⚔️ ซุนวู: "รู้เขา รู้เรา รบร้อยครั้ง ชนะร้อยครั้ง"</div>
             <div class="guru-quote">🛡️ เลโอนิดัส: "THIS IS SPARTA! จัดการได้!"</div>
-            <p style="color: green; font-weight: bold;">✅ ซื้อตาม</p>
+            <p style="color:#28a745; font-weight:bold; font-size:1.3rem;">✅ ซื้อตาม</p>
         </div>
         """, unsafe_allow_html=True)
+    
     elif ratio >= 1.5:
         st.markdown(f"""
         <div class="guru-card reversal-card">
-            <h2>🎯 REVERSAL</h2>
-            <p>วอลุ่มซื้อเริ่มเข้า {ratio:.2f} เท่า</p>
+            <h2 style="margin:0;">🎯 REVERSAL</h2>
+            <p style="font-size:1.2rem;">วอลุ่มซื้อเริ่มเข้า {ratio:.2f} เท่า</p>
             <div class="guru-quote">🐂 บัฟเฟต์: "ซื้อตอนคนกลัว ขายตอนคนโลภ"</div>
-            <div class="guru-quote">⚔️ ซุนวู: "จงรอให้ศึกชัดเจน"</div>
-            <p style="color: orange; font-weight: bold;">⏳ รอดู</p>
+            <div class="guru-quote">⚔️ ซุนวู: "จงรอให้ศึกชัดเจน แล้วค่อยลงมือ"</div>
+            <p style="color:#ffc107; font-weight:bold; font-size:1.3rem;">⏳ รอดู</p>
         </div>
         """, unsafe_allow_html=True)
+    
     elif ratio <= 0.5:
-        inv = offer_3 / bid_3 if bid_3 > 0 else 0
+        inv_ratio = offer_3 / bid_3 if bid_3 > 0 else 0
         st.markdown(f"""
         <div class="guru-card panic-card">
-            <h2>💀 PANIC</h2>
-            <p>วอลุ่มขายหนา {inv:.2f} เท่า เจ้ากำลังเทขาย</p>
+            <h2 style="margin:0;">💀 PANIC</h2>
+            <p style="font-size:1.2rem;">วอลุ่มขายหนา {inv_ratio:.2f} เท่า</p>
+            <p style="font-size:1.1rem;">เจ้ากำลังเทขาย!</p>
             <div class="guru-quote">⚔️ ซุนวู: "三十六计 หนีคือกลยุทธ์สูงสุด"</div>
             <div class="guru-quote">🛡️ เลโอนิดัส: "วันนี้ถอย พรุ่งนี้ค่อยสู้ใหม่"</div>
-            <p style="color: red; font-weight: bold;">⚠️ ขาย/ชอร์ต</p>
+            <p style="color:#dc3545; font-weight:bold; font-size:1.3rem;">⚠️ ขาย/ชอร์ต</p>
         </div>
         """, unsafe_allow_html=True)
+    
     else:
         st.markdown(f"""
         <div class="guru-card tired-card">
-            <h2>🎣 TIRED MARKET</h2>
-            <p>วอลุ่มสมดุล {ratio:.2f} เท่า</p>
-            <div class="guru-quote">💻 บิล: "Data เงียบ จงอย่าด่วนตัดสินใจ"</div>
-            <div class="guru-quote">🚀 อีลอน: "ตลาดเหนื่อย เราก็พัก"</div>
-            <p style="color: gray; font-weight: bold;">👀 เฝ้าดู</p>
+            <h2 style="margin:0;">🎣 TIRED MARKET</h2>
+            <p style="font-size:1.2rem;">วอลุ่มสมดุล {ratio:.2f} เท่า</p>
+            <div class="guru-quote">💻 บิล เกตส์: "Data เงียบ จงอย่าด่วนตัดสินใจ"</div>
+            <div class="guru-quote">🚀 อีลอน: "ตลาดเหนื่อย เราก็พัก รอจังหวะดีกว่า"</div>
+            <p style="color:#6c757d; font-weight:bold; font-size:1.3rem;">👀 เฝ้าดู</p>
         </div>
         """, unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
-st.caption(f"⚔️ ซุนวู · 🐂 บัฟเฟต์ · 💻 บิล · 🚀 อีลอน · 🛡️ เลโอนิดัส")
-st.caption(f"อัปเดต {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.caption("⚔️ ซุนวู - ยุทธการ")
+with col2:
+    st.caption("🐂 บัฟเฟต์ - มูลค่า")
+with col3:
+    st.caption("💻 บิล - ระบบ")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.caption("🚀 อีลอน - นวัตกรรม")
+with col2:
+    st.caption("🛡️ เลโอนิดัส - นักรบ")
+with col3:
+    st.caption(f"อัปเดต {datetime.now().strftime('%d/%m/%Y %H:%M')}")
