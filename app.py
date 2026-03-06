@@ -6,9 +6,48 @@ from PIL import Image
 import re
 import pandas as pd
 from datetime import datetime
+import os
+import subprocess
 
-# ตั้งค่า Tesseract (Windows)
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# ตั้งค่า Tesseract path
+if os.name == 'nt':  # Windows
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+else:  # Linux (Streamlit Cloud)
+    # ลองหลายๆ path ที่เป็นไปได้
+    possible_paths = [
+        '/usr/bin/tesseract',
+        '/usr/local/bin/tesseract',
+        '/app/.apt/usr/bin/tesseract'
+    ]
+    
+    tesseract_found = False
+    for path in possible_paths:
+        if os.path.exists(path):
+            pytesseract.pytesseract.tesseract_cmd = path
+            tesseract_found = True
+            break
+    
+    # ถ้ายังไม่เจอ ลองใช้ which command
+    if not tesseract_found:
+        try:
+            result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                pytesseract.pytesseract.tesseract_cmd = result.stdout.strip()
+                tesseract_found = True
+        except:
+            pass
+
+# ตรวจสอบว่า Tesseract พร้อมใช้งาน
+HAS_TESSERACT = False
+try:
+    version = subprocess.run(['tesseract', '--version'], capture_output=True, text=True)
+    if version.returncode == 0:
+        HAS_TESSERACT = True
+        print("✅ Tesseract พร้อมใช้งาน")
+    else:
+        print("⚠️ Tesseract ไม่พร้อมใช้งาน")
+except:
+    print("⚠️ ไม่สามารถเรียก Tesseract ได้")
 
 st.set_page_config(
     page_title="นายพรานจับจังหวะ",
@@ -141,6 +180,12 @@ if 'ratio' not in st.session_state:
 st.markdown('<p class="main-header">🐂 นายพรานจับจังหวะ</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">วิเคราะห์ Bid/Offer ด้วยกุนซือทั้ง 5</p>', unsafe_allow_html=True)
 
+# แสดงสถานะ Tesseract
+if HAS_TESSERACT:
+    st.sidebar.success("✅ Tesseract พร้อมใช้งาน")
+else:
+    st.sidebar.warning("⚠️ Tesseract ไม่พร้อมใช้งาน (กรุณาป้อนตัวเลขด้วยตนเอง)")
+
 # Layout 2 คอลัมน์หลัก
 left_col, right_col = st.columns([1, 1.2])
 
@@ -159,29 +204,36 @@ with left_col:
             
             if st.button("🔍 อ่านค่าด้วย OCR", type="primary", use_container_width=True):
                 with st.spinner("กำลังอ่านภาพ..."):
-                    # แปลงภาพ
-                    img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-                    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
                     
-                    # ปรับแต่งภาพ
-                    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-                    
-                    # OCR
-                    custom_config = r'--oem 3 --psm 6'
-                    text = pytesseract.image_to_string(thresh, config=custom_config)
-                    
-                    # ดึงเฉพาะตัวเลข
-                    numbers = re.findall(r'\d+', text)
-                    
-                    if len(numbers) >= 10:
-                        st.session_state.bid_values = [int(x) for x in numbers[:5]]
-                        st.session_state.offer_values = [int(x) for x in numbers[5:10]]
-                        st.session_state.ocr_done = True
-                        st.success(f"✅ อ่านพบ {len(numbers)} ตัวเลข")
-                        st.rerun()
+                    if HAS_TESSERACT:
+                        try:
+                            # แปลงภาพ
+                            img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+                            gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+                            
+                            # ปรับแต่งภาพ
+                            _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+                            
+                            # OCR
+                            custom_config = r'--oem 3 --psm 6'
+                            text = pytesseract.image_to_string(thresh, config=custom_config)
+                            
+                            # ดึงเฉพาะตัวเลข
+                            numbers = re.findall(r'\d+', text)
+                            
+                            if len(numbers) >= 10:
+                                st.session_state.bid_values = [int(x) for x in numbers[:5]]
+                                st.session_state.offer_values = [int(x) for x in numbers[5:10]]
+                                st.session_state.ocr_done = True
+                                st.success(f"✅ อ่านพบ {len(numbers)} ตัวเลข")
+                                st.rerun()
+                            else:
+                                st.warning(f"⚠️ พบตัวเลข {len(numbers)} ตัว (ต้องการอย่างน้อย 10)")
+                                st.text(f"ข้อความที่อ่านได้:\n{text}")
+                        except Exception as e:
+                            st.error(f"❌ เกิดข้อผิดพลาด: {e}")
                     else:
-                        st.warning(f"⚠️ พบตัวเลข {len(numbers)} ตัว (ต้องการอย่างน้อย 10)")
-                        st.text(f"ข้อความที่อ่านได้:\n{text}")
+                        st.error("❌ Tesseract ไม่พร้อมใช้งาน กรุณาป้อนตัวเลขด้วยตนเอง")
     
     with tab2:
         st.markdown("##### วางข้อความจาก OCR อื่นๆ")
