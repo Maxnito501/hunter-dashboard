@@ -13,41 +13,23 @@ import subprocess
 if os.name == 'nt':  # Windows
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 else:  # Linux (Streamlit Cloud)
-    # ลองหลายๆ path ที่เป็นไปได้
     possible_paths = [
         '/usr/bin/tesseract',
         '/usr/local/bin/tesseract',
         '/app/.apt/usr/bin/tesseract'
     ]
-    
-    tesseract_found = False
     for path in possible_paths:
         if os.path.exists(path):
             pytesseract.pytesseract.tesseract_cmd = path
-            tesseract_found = True
             break
-    
-    # ถ้ายังไม่เจอ ลองใช้ which command
-    if not tesseract_found:
-        try:
-            result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
-            if result.returncode == 0 and result.stdout.strip():
-                pytesseract.pytesseract.tesseract_cmd = result.stdout.strip()
-                tesseract_found = True
-        except:
-            pass
 
-# ตรวจสอบว่า Tesseract พร้อมใช้งาน
+# ตรวจสอบ Tesseract
 HAS_TESSERACT = False
 try:
-    version = subprocess.run(['tesseract', '--version'], capture_output=True, text=True)
-    if version.returncode == 0:
-        HAS_TESSERACT = True
-        print("✅ Tesseract พร้อมใช้งาน")
-    else:
-        print("⚠️ Tesseract ไม่พร้อมใช้งาน")
+    result = subprocess.run(['tesseract', '--version'], capture_output=True, text=True)
+    HAS_TESSERACT = (result.returncode == 0)
 except:
-    print("⚠️ ไม่สามารถเรียก Tesseract ได้")
+    HAS_TESSERACT = False
 
 st.set_page_config(
     page_title="นายพรานจับจังหวะ",
@@ -55,7 +37,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# CSS เพิ่มความสวยงาม
+# CSS
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;700&display=swap');
@@ -74,12 +56,6 @@ st.markdown("""
         margin-bottom: 0.5rem;
     }
     
-    .sub-header {
-        text-align: center;
-        color: #666;
-        margin-bottom: 2rem;
-    }
-    
     .guru-card {
         background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
         border-radius: 20px;
@@ -93,14 +69,6 @@ st.markdown("""
     .reversal-card { border-left-color: #ffc107; }
     .panic-card { border-left-color: #dc3545; }
     .tired-card { border-left-color: #6c757d; }
-    .trend-card { border-left-color: #007bff; }
-    .cutloss-card { border-left-color: #fd7e14; }
-    
-    .guru-name {
-        font-size: 1.5rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-    }
     
     .guru-quote {
         font-size: 1.2rem;
@@ -111,24 +79,6 @@ st.markdown("""
         border-left: 3px solid #667eea;
     }
     
-    .strategy-box {
-        background: #f8f9fa;
-        padding: 2rem;
-        border-radius: 20px;
-        text-align: center;
-    }
-    
-    .strategy-emoji {
-        font-size: 4rem;
-        margin-bottom: 1rem;
-    }
-    
-    .strategy-name {
-        font-size: 2rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-    }
-    
     .stat-box {
         background: white;
         padding: 1rem;
@@ -137,324 +87,197 @@ st.markdown("""
         text-align: center;
     }
     
-    .stat-number {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #667eea;
-    }
-    
-    .stat-label {
-        color: #888;
-        font-size: 0.9rem;
-    }
-    
     .bid-box {
         background: #dcfce7;
-        padding: 0.8rem;
-        border-radius: 10px;
+        padding: 0.5rem;
+        border-radius: 5px;
         text-align: center;
     }
     
     .offer-box {
         background: #fee2e2;
-        padding: 0.8rem;
-        border-radius: 10px;
+        padding: 0.5rem;
+        border-radius: 5px;
         text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
+# Session state
 if 'ocr_done' not in st.session_state:
     st.session_state.ocr_done = False
 if 'bid_values' not in st.session_state:
     st.session_state.bid_values = [0, 0, 0, 0, 0]
 if 'offer_values' not in st.session_state:
     st.session_state.offer_values = [0, 0, 0, 0, 0]
-if 'current_strategy' not in st.session_state:
-    st.session_state.current_strategy = None
-if 'ratio' not in st.session_state:
-    st.session_state.ratio = 0
+if 'analyzed' not in st.session_state:
+    st.session_state.analyzed = False
+if 'uploaded_image' not in st.session_state:
+    st.session_state.uploaded_image = None
 
 # Header
 st.markdown('<p class="main-header">🐂 นายพรานจับจังหวะ</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">วิเคราะห์ Bid/Offer ด้วยกุนซือทั้ง 5</p>', unsafe_allow_html=True)
+st.markdown("---")
 
 # แสดงสถานะ Tesseract
-if HAS_TESSERACT:
-    st.sidebar.success("✅ Tesseract พร้อมใช้งาน")
-else:
-    st.sidebar.warning("⚠️ Tesseract ไม่พร้อมใช้งาน (กรุณาป้อนตัวเลขด้วยตนเอง)")
+if not HAS_TESSERACT:
+    st.sidebar.warning("⚠️ Tesseract ไม่พร้อมใช้งาน กรุณาป้อนตัวเลขเอง")
 
-# Layout 2 คอลัมน์หลัก
-left_col, right_col = st.columns([1, 1.2])
+# Layout
+left_col, right_col = st.columns([1, 1])
 
 with left_col:
     st.markdown("### 📸 1. อัปโหลดภาพ")
+    uploaded_file = st.file_uploader("เลือกภาพ (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
     
-    # ตัวเลือกการรับภาพ
-    tab1, tab2 = st.tabs(["📤 อัปโหลดไฟล์", "📋 วางข้อความ"])
-    
-    with tab1:
-        uploaded_file = st.file_uploader("ลากหรือเลือกภาพ (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
+    if uploaded_file:
+        image = Image.open(uploaded_file)
+        st.session_state.uploaded_image = image
+        st.image(image, caption="ภาพที่อัปโหลด", use_column_width=True)
         
-        if uploaded_file:
-            image = Image.open(uploaded_file)
-            st.image(image, caption="ภาพที่อัปโหลด", use_column_width=True)
-            
-            if st.button("🔍 อ่านค่าด้วย OCR", type="primary", use_container_width=True):
-                with st.spinner("กำลังอ่านภาพ..."):
+        if HAS_TESSERACT and st.button("🔍 อ่านค่าด้วย OCR", use_container_width=True):
+            with st.spinner("กำลังอ่านภาพ..."):
+                try:
+                    # แปลงภาพ
+                    img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+                    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+                    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
                     
-                    if HAS_TESSERACT:
-                        try:
-                            # แปลงภาพ
-                            img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-                            gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-                            
-                            # ปรับแต่งภาพ
-                            _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-                            
-                            # OCR
-                            custom_config = r'--oem 3 --psm 6'
-                            text = pytesseract.image_to_string(thresh, config=custom_config)
-                            
-                            # ดึงเฉพาะตัวเลข
-                            numbers = re.findall(r'\d+', text)
-                            
-                            if len(numbers) >= 10:
-                                st.session_state.bid_values = [int(x) for x in numbers[:5]]
-                                st.session_state.offer_values = [int(x) for x in numbers[5:10]]
-                                st.session_state.ocr_done = True
-                                st.success(f"✅ อ่านพบ {len(numbers)} ตัวเลข")
-                                st.rerun()
-                            else:
-                                st.warning(f"⚠️ พบตัวเลข {len(numbers)} ตัว (ต้องการอย่างน้อย 10)")
-                                st.text(f"ข้อความที่อ่านได้:\n{text}")
-                        except Exception as e:
-                            st.error(f"❌ เกิดข้อผิดพลาด: {e}")
+                    # OCR
+                    custom_config = r'--oem 3 --psm 6'
+                    text = pytesseract.image_to_string(thresh, config=custom_config)
+                    
+                    # ดึงตัวเลข
+                    numbers = re.findall(r'\d+', text)
+                    
+                    if len(numbers) >= 10:
+                        st.session_state.bid_values = [int(x) for x in numbers[:5]]
+                        st.session_state.offer_values = [int(x) for x in numbers[5:10]]
+                        st.session_state.ocr_done = True
+                        st.success(f"✅ อ่านพบ {len(numbers)} ตัวเลข")
+                        st.rerun()
                     else:
-                        st.error("❌ Tesseract ไม่พร้อมใช้งาน กรุณาป้อนตัวเลขด้วยตนเอง")
-    
-    with tab2:
-        st.markdown("##### วางข้อความจาก OCR อื่นๆ")
-        text_input = st.text_area("วางข้อความที่มีตัวเลข", height=150)
-        
-        if st.button("🔍 ดึงตัวเลข", use_container_width=True):
-            numbers = re.findall(r'\d+', text_input)
-            if len(numbers) >= 10:
-                st.session_state.bid_values = [int(x) for x in numbers[:5]]
-                st.session_state.offer_values = [int(x) for x in numbers[5:10]]
-                st.session_state.ocr_done = True
-                st.success(f"✅ พบ {len(numbers)} ตัวเลข")
-                st.rerun()
-            else:
-                st.warning(f"⚠️ พบ {len(numbers)} ตัวเลข (ต้องการ 10)")
+                        st.warning(f"⚠️ พบ {len(numbers)} ตัวเลข (ต้องการ 10)")
+                        st.text(text)
+                except Exception as e:
+                    st.error(f"❌ OCR error: {e}")
 
 with right_col:
-    st.markdown("### 🐋 2. ตรวจสอบและแก้ไข")
+    st.markdown("### ✏️ 2. ตรวจสอบและแก้ไข")
     
-    if st.session_state.ocr_done:
-        st.success("✅ OCR สำเร็จ! กรุณาตรวจสอบความถูกต้อง")
-        
-        # Bid
-        st.markdown("#### 🟢 Bid (ฝั่งซื้อ)")
-        bid_cols = st.columns(5)
-        for i in range(5):
-            with bid_cols[i]:
-                st.markdown(f"<div class='bid-box'>B{i+1}</div>", unsafe_allow_html=True)
-                st.session_state.bid_values[i] = st.number_input(
-                    f"vol_{i+1}",
-                    min_value=0,
-                    value=st.session_state.bid_values[i],
-                    step=100,
-                    key=f"bid_{i}",
-                    label_visibility="collapsed"
-                )
-        
-        # Offer
-        st.markdown("#### 🔴 Offer (ฝั่งขาย)")
-        offer_cols = st.columns(5)
-        for i in range(5):
-            with offer_cols[i]:
-                st.markdown(f"<div class='offer-box'>O{i+1}</div>", unsafe_allow_html=True)
-                st.session_state.offer_values[i] = st.number_input(
-                    f"vol_o{i+1}",
-                    min_value=0,
-                    value=st.session_state.offer_values[i],
-                    step=100,
-                    key=f"offer_{i}",
-                    label_visibility="collapsed"
-                )
-        
-        # ปุ่มวิเคราะห์
-        if st.button("📊 วิเคราะห์", type="primary", use_container_width=True):
-            # คำนวณ 3 ช่องแรก
-            bid_3 = sum(st.session_state.bid_values[:3])
-            offer_3 = sum(st.session_state.offer_values[:3])
-            st.session_state.ratio = bid_3 / offer_3 if offer_3 > 0 else 0
-            
-            # กำหนดกลยุทธ์
-            if st.session_state.ratio >= 2:
-                st.session_state.current_strategy = "whale"
-            elif st.session_state.ratio >= 1.5:
-                st.session_state.current_strategy = "reversal"
-            elif st.session_state.ratio <= 0.5:
-                st.session_state.current_strategy = "panic"
-            else:
-                st.session_state.current_strategy = "tired"
-            
-            st.rerun()
+    # Bid
+    st.markdown("#### 🟢 Bid (ฝั่งซื้อ)")
+    bid_cols = st.columns(5)
+    for i in range(5):
+        with bid_cols[i]:
+            st.markdown(f"<div class='bid-box'>B{i+1}</div>", unsafe_allow_html=True)
+            st.session_state.bid_values[i] = st.number_input(
+                f"bid_{i+1}",
+                min_value=0,
+                value=st.session_state.bid_values[i],
+                step=1000,
+                key=f"bid_{i}",
+                label_visibility="collapsed"
+            )
     
-    else:
-        st.info("👆 กรุณาอัปโหลดภาพและกด 'อ่านค่าด้วย OCR' ก่อน")
+    # Offer
+    st.markdown("#### 🔴 Offer (ฝั่งขาย)")
+    offer_cols = st.columns(5)
+    for i in range(5):
+        with offer_cols[i]:
+            st.markdown(f"<div class='offer-box'>O{i+1}</div>", unsafe_allow_html=True)
+            st.session_state.offer_values[i] = st.number_input(
+                f"offer_{i+1}",
+                min_value=0,
+                value=st.session_state.offer_values[i],
+                step=1000,
+                key=f"offer_{i}",
+                label_visibility="collapsed"
+            )
+    
+    # ปุ่มวิเคราะห์
+    if st.button("📊 วิเคราะห์", type="primary", use_container_width=True):
+        st.session_state.analyzed = True
+        st.rerun()
 
-# ส่วนแสดงผลวิเคราะห์
-if st.session_state.current_strategy:
+# ผลวิเคราะห์
+if st.session_state.analyzed:
     st.markdown("---")
     st.markdown("## 🎯 ผลวิเคราะห์")
     
-    # คำนวณค่า
     bid_3 = sum(st.session_state.bid_values[:3])
     offer_3 = sum(st.session_state.offer_values[:3])
+    ratio = bid_3 / offer_3 if offer_3 > 0 else 0
     
-    # สร้างสถิติ
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown(f"""
         <div class="stat-box">
             <div class="stat-number">{bid_3:,}</div>
-            <div class="stat-label">Bid 3 ช่อง</div>
+            <div>Bid 3 ช่อง</div>
         </div>
         """, unsafe_allow_html=True)
     with col2:
         st.markdown(f"""
         <div class="stat-box">
             <div class="stat-number">{offer_3:,}</div>
-            <div class="stat-label">Offer 3 ช่อง</div>
+            <div>Offer 3 ช่อง</div>
         </div>
         """, unsafe_allow_html=True)
     with col3:
         st.markdown(f"""
         <div class="stat-box">
-            <div class="stat-number">{st.session_state.ratio:.2f}</div>
-            <div class="stat-label">อัตราส่วน</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col4:
-        action = ""
-        if st.session_state.current_strategy == "whale":
-            action = "ซื้อ"
-        elif st.session_state.current_strategy == "panic":
-            action = "ขาย"
-        elif st.session_state.current_strategy == "reversal":
-            action = "รอ"
-        else:
-            action = "เฝ้าดู"
-        
-        st.markdown(f"""
-        <div class="stat-box">
-            <div class="stat-number">{action}</div>
-            <div class="stat-label">คำแนะนำ</div>
+            <div class="stat-number">{ratio:.2f}</div>
+            <div>อัตราส่วน</div>
         </div>
         """, unsafe_allow_html=True)
     
-    # แสดงกลยุทธ์และกุนซือ
     st.markdown("---")
     
-    if st.session_state.current_strategy == "whale":
+    # กลยุทธ์
+    if ratio >= 2:
         st.markdown(f"""
         <div class="guru-card whale-card">
-            <div style="display: flex; align-items: center; gap: 20px;">
-                <div style="font-size: 4rem;">🐋</div>
-                <div>
-                    <div class="strategy-name">WHALE RIDER</div>
-                    <div>วอลุ่มซื้อหนา {st.session_state.ratio:.2f} เท่า เจ้ากำลังช้อนของ</div>
-                </div>
-            </div>
-            <div style="margin-top: 20px;">
-                <div class="guru-quote">⚔️ ซุนวู: "รู้เขา รู้เรา รบร้อยครั้ง ชนะร้อยครั้ง"</div>
-                <div class="guru-quote">🛡️ เลโอนิดัส: "THIS IS SPARTA! จัดการได้!"</div>
-            </div>
-            <div style="margin-top: 15px; padding: 10px; background: #28a74520; border-radius: 10px;">
-                <b>✅ คำแนะนำ:</b> ซื้อตาม ตั้ง Cut Loss 5% 
-            </div>
+            <h2>🐋 WHALE RIDER</h2>
+            <p>วอลุ่มซื้อหนา {ratio:.2f} เท่า เจ้ากำลังช้อนของ</p>
+            <div class="guru-quote">⚔️ ซุนวู: "รู้เขา รู้เรา รบร้อยครั้ง ชนะร้อยครั้ง"</div>
+            <div class="guru-quote">🛡️ เลโอนิดัส: "THIS IS SPARTA! จัดการได้!"</div>
+            <p style="color: green; font-weight: bold;">✅ ซื้อตาม</p>
         </div>
         """, unsafe_allow_html=True)
-    
-    elif st.session_state.current_strategy == "panic":
-        inv_ratio = offer_3 / bid_3 if bid_3 > 0 else 0
-        st.markdown(f"""
-        <div class="guru-card panic-card">
-            <div style="display: flex; align-items: center; gap: 20px;">
-                <div style="font-size: 4rem;">💀</div>
-                <div>
-                    <div class="strategy-name">PANIC</div>
-                    <div>วอลุ่มขายหนา {inv_ratio:.2f} เท่า เจ้ากำลังเทขาย</div>
-                </div>
-            </div>
-            <div style="margin-top: 20px;">
-                <div class="guru-quote">⚔️ ซุนวู: "三十六计 หนีคือกลยุทธ์สูงสุด"</div>
-                <div class="guru-quote">🛡️ เลโอนิดัส: "วันนี้ถอย พรุ่งนี้ค่อยสู้ใหม่"</div>
-            </div>
-            <div style="margin-top: 15px; padding: 10px; background: #dc354520; border-radius: 10px;">
-                <b>⚠️ คำแนะนำ:</b> ขาย/ชอร์ต ตั้ง Stop Loss 3%
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    elif st.session_state.current_strategy == "reversal":
+    elif ratio >= 1.5:
         st.markdown(f"""
         <div class="guru-card reversal-card">
-            <div style="display: flex; align-items: center; gap: 20px;">
-                <div style="font-size: 4rem;">🎯</div>
-                <div>
-                    <div class="strategy-name">REVERSAL</div>
-                    <div>วอลุ่มซื้อเริ่มเข้า {st.session_state.ratio:.2f} เท่า</div>
-                </div>
-            </div>
-            <div style="margin-top: 20px;">
-                <div class="guru-quote">🐂 บัฟเฟต์: "ซื้อตอนคนกลัว ขายตอนคนโลภ"</div>
-                <div class="guru-quote">⚔️ ซุนวู: "จงรอให้ศึกชัดเจน แล้วค่อยลงมือ"</div>
-            </div>
-            <div style="margin-top: 15px; padding: 10px; background: #ffc10720; border-radius: 10px;">
-                <b>⏳ คำแนะนำ:</b> รอให้ชัดเจน เตรียมซื้อเมื่อ RSI <30
-            </div>
+            <h2>🎯 REVERSAL</h2>
+            <p>วอลุ่มซื้อเริ่มเข้า {ratio:.2f} เท่า</p>
+            <div class="guru-quote">🐂 บัฟเฟต์: "ซื้อตอนคนกลัว ขายตอนคนโลภ"</div>
+            <div class="guru-quote">⚔️ ซุนวู: "จงรอให้ศึกชัดเจน"</div>
+            <p style="color: orange; font-weight: bold;">⏳ รอดู</p>
         </div>
         """, unsafe_allow_html=True)
-    
-    elif st.session_state.current_strategy == "tired":
+    elif ratio <= 0.5:
+        inv = offer_3 / bid_3 if bid_3 > 0 else 0
+        st.markdown(f"""
+        <div class="guru-card panic-card">
+            <h2>💀 PANIC</h2>
+            <p>วอลุ่มขายหนา {inv:.2f} เท่า เจ้ากำลังเทขาย</p>
+            <div class="guru-quote">⚔️ ซุนวู: "三十六计 หนีคือกลยุทธ์สูงสุด"</div>
+            <div class="guru-quote">🛡️ เลโอนิดัส: "วันนี้ถอย พรุ่งนี้ค่อยสู้ใหม่"</div>
+            <p style="color: red; font-weight: bold;">⚠️ ขาย/ชอร์ต</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
         st.markdown(f"""
         <div class="guru-card tired-card">
-            <div style="display: flex; align-items: center; gap: 20px;">
-                <div style="font-size: 4rem;">🎣</div>
-                <div>
-                    <div class="strategy-name">TIRED MARKET</div>
-                    <div>วอลุ่มสมดุล {st.session_state.ratio:.2f} เท่า</div>
-                </div>
-            </div>
-            <div style="margin-top: 20px;">
-                <div class="guru-quote">💻 บิล เกตส์: "Data เงียบ จงอย่าด่วนตัดสินใจ"</div>
-                <div class="guru-quote">🚀 อีลอน: "ตลาดเหนื่อย เราก็พัก รอจังหวะดีกว่า"</div>
-            </div>
-            <div style="margin-top: 15px; padding: 10px; background: #6c757d20; border-radius: 10px;">
-                <b>👀 คำแนะนำ:</b> เฝ้าดู รอให้ Volume เพิ่มก่อน
-            </div>
+            <h2>🎣 TIRED MARKET</h2>
+            <p>วอลุ่มสมดุล {ratio:.2f} เท่า</p>
+            <div class="guru-quote">💻 บิล: "Data เงียบ จงอย่าด่วนตัดสินใจ"</div>
+            <div class="guru-quote">🚀 อีลอน: "ตลาดเหนื่อย เราก็พัก"</div>
+            <p style="color: gray; font-weight: bold;">👀 เฝ้าดู</p>
         </div>
         """, unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.caption("⚔️ ซุนวู - ยุทธการ")
-with col2:
-    st.caption("🐂 บัฟเฟต์ - มูลค่า")
-with col3:
-    st.caption("💻 บิล - ระบบ")
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.caption("🚀 อีลอน - นวัตกรรม")
-with col2:
-    st.caption("🛡️ เลโอนิดัส - นักรบ")
-with col3:
-    st.caption(f"อัปเดต {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+st.caption(f"⚔️ ซุนวู · 🐂 บัฟเฟต์ · 💻 บิล · 🚀 อีลอน · 🛡️ เลโอนิดัส")
+st.caption(f"อัปเดต {datetime.now().strftime('%d/%m/%Y %H:%M')}")
